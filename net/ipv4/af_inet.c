@@ -840,14 +840,10 @@ int inet_shutdown(struct socket *sock, int how)
 			sk->sk_prot->shutdown(sk, how);
 		break;
 
-	/* Remaining two branches are temporary solution for missing
+	/* Remaining branch is a temporary solution for missing
 	 * close() in multithreaded environment. It is _not_ a good idea,
 	 * but we have no choice until close() is repaired at VFS level.
 	 */
-	case TCP_LISTEN:
-		if (!(how & RCV_SHUTDOWN))
-			break;
-		/* Fall through */
 	case TCP_SYN_SENT:
 		err = sk->sk_prot->disconnect(sk, O_NONBLOCK);
 		sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
