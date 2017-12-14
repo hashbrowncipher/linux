@@ -95,18 +95,18 @@ int __delayacct_add_tsk(struct taskstats *d, struct task_struct *tsk)
 	u64 utime, stime, stimescaled, utimescaled;
 	unsigned long long t2, t3;
 	unsigned long flags, t1;
-	s64 tmp;
+	u64 tmp;
 
 	task_cputime(tsk, &utime, &stime);
-	tmp = (s64)d->cpu_run_real_total;
+	tmp = d->cpu_run_real_total;
 	tmp += utime + stime;
-	d->cpu_run_real_total = (tmp < (s64)d->cpu_run_real_total) ? 0 : tmp;
+	d->cpu_run_real_total = (tmp < d->cpu_run_real_total) ? U64_MAX : tmp;
 
 	task_cputime_scaled(tsk, &utimescaled, &stimescaled);
-	tmp = (s64)d->cpu_scaled_run_real_total;
+	tmp = d->cpu_scaled_run_real_total;
 	tmp += utimescaled + stimescaled;
 	d->cpu_scaled_run_real_total =
-		(tmp < (s64)d->cpu_scaled_run_real_total) ? 0 : tmp;
+		(tmp < d->cpu_scaled_run_real_total) ? U64_MAX : tmp;
 
 	/*
 	 * No locking available for sched_info (and too expensive to add one)
@@ -119,21 +119,19 @@ int __delayacct_add_tsk(struct taskstats *d, struct task_struct *tsk)
 	d->cpu_count += t1;
 
 	tmp = (s64)d->cpu_delay_total + t2;
-	d->cpu_delay_total = (tmp < (s64)d->cpu_delay_total) ? 0 : tmp;
+	d->cpu_delay_total = (tmp < d->cpu_delay_total) ? U64_MAX : tmp;
 
 	tmp = (s64)d->cpu_run_virtual_total + t3;
 	d->cpu_run_virtual_total =
-		(tmp < (s64)d->cpu_run_virtual_total) ?	0 : tmp;
-
-	/* zero XXX_total, non-zero XXX_count implies XXX stat overflowed */
+		(tmp < d->cpu_run_virtual_total) ? U64_MAX : tmp;
 
 	spin_lock_irqsave(&tsk->delays->lock, flags);
 	tmp = d->blkio_delay_total + tsk->delays->blkio_delay;
-	d->blkio_delay_total = (tmp < d->blkio_delay_total) ? 0 : tmp;
+	d->blkio_delay_total = (tmp < d->blkio_delay_total) ? U64_MAX : tmp;
 	tmp = d->swapin_delay_total + tsk->delays->swapin_delay;
-	d->swapin_delay_total = (tmp < d->swapin_delay_total) ? 0 : tmp;
+	d->swapin_delay_total = (tmp < d->swapin_delay_total) ? U64_MAX : tmp;
 	tmp = d->freepages_delay_total + tsk->delays->freepages_delay;
-	d->freepages_delay_total = (tmp < d->freepages_delay_total) ? 0 : tmp;
+	d->freepages_delay_total = (tmp < d->freepages_delay_total) ? U64_MAX : tmp;
 	d->blkio_count += tsk->delays->blkio_count;
 	d->swapin_count += tsk->delays->swapin_count;
 	d->freepages_count += tsk->delays->freepages_count;
