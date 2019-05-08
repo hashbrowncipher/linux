@@ -1,5 +1,5 @@
 #include <linux/mm.h>
-#include <linux/mem_encrypt.h>
+#include <asm/mem_encrypt.h>
 #include <asm/mktme.h>
 
 /*
