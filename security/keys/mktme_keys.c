@@ -14,6 +14,8 @@
 
 #include "internal.h"
 
+static DEFINE_SPINLOCK(mktme_lock);
+
 /* 1:1 Mapping between Userspace Keys (struct key) and Hardware KeyIDs */
 struct mktme_mapping {
 	unsigned int	mapped_keyids;
@@ -94,6 +96,26 @@ struct mktme_payload {
 	u8		data_key[MKTME_AES_XTS_SIZE];
 	u8		tweak_key[MKTME_AES_XTS_SIZE];
 };
+
+/* Key Service Method called when a Userspace Key is garbage collected. */
+static void mktme_destroy_key(struct key *key)
+{
+	mktme_release_keyid(mktme_keyid_from_key(key));
+}
+
+/* Key Service Method to create a new key. Payload is preparsed. */
+int mktme_instantiate_key(struct key *key, struct key_preparsed_payload *prep)
+{
+	unsigned long flags;
+	int keyid;
+
+	spin_lock_irqsave(&mktme_lock, flags);
+	keyid = mktme_reserve_keyid(key);
+	spin_unlock_irqrestore(&mktme_lock, flags);
+	if (!keyid)
+		return -ENOKEY;
+	return 0;
+}
 
 /* Make sure arguments are correct for the TYPE of key requested */
 static int mktme_check_options(struct mktme_payload *payload,
@@ -236,7 +258,9 @@ struct key_type key_type_mktme = {
 	.name		= "mktme",
 	.preparse	= mktme_preparse_payload,
 	.free_preparse	= mktme_free_preparsed_payload,
+	.instantiate	= mktme_instantiate_key,
 	.describe	= user_describe,
+	.destroy	= mktme_destroy_key,
 };
 
 static int __init init_mktme(void)
