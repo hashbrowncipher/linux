@@ -233,7 +233,7 @@
 219	i386	madvise			sys_madvise			__ia32_sys_madvise
 220	i386	getdents64		sys_getdents64			__ia32_sys_getdents64
 221	i386	fcntl64			sys_fcntl64			__ia32_compat_sys_fcntl64
-# 222 is unused
+222	i386	encrypt_mprotect	sys_encrypt_mprotect		__ia32_sys_encrypt_mprotect
 # 223 is unused
 224	i386	gettid			sys_gettid			__ia32_sys_gettid
 225	i386	readahead		sys_readahead			__ia32_compat_sys_x86_readahead

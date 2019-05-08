@@ -824,6 +824,9 @@ __SYSCALL(__NR_futex_time64, sys_futex)
 __SYSCALL(__NR_sched_rr_get_interval_time64, sys_sched_rr_get_interval)
 #endif
 
+#define __NR_encrypt_mprotect 423
+__SYSCALL(__NR_encrypt_mprotect, sys_encrypt_mprotect)
+
 #define __NR_pidfd_send_signal 424
 __SYSCALL(__NR_pidfd_send_signal, sys_pidfd_send_signal)
 #define __NR_io_uring_setup 425
@@ -847,6 +850,7 @@ __SYSCALL(__NR_fspick, sys_fspick)
 
 #undef __NR_syscalls
 #define __NR_syscalls 434
+
 
 /*
  * 32 bit systems traditionally used different
