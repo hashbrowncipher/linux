@@ -543,6 +543,45 @@ out:
 	return ret;
 }
 
+static int mktme_get_new_pconfig_target(void)
+{
+	unsigned long *prev_map, *tmp_map;
+	int new_target;		/* New PCONFIG target to program */
+
+	/* Save the current mktme_target_map bitmap */
+	prev_map = bitmap_alloc(topology_max_packages(), GFP_KERNEL);
+	bitmap_copy(prev_map, mktme_target_map, sizeof(mktme_target_map));
+
+	/* Update the global targets - includes mktme_target_map */
+	mktme_update_pconfig_targets();
+
+	/* Nothing to do if the target bitmap is unchanged */
+	if (bitmap_equal(prev_map, mktme_target_map, sizeof(prev_map))) {
+		new_target = -1;
+		goto free_prev;
+	}
+
+	/* Find the change in the target bitmap */
+	tmp_map = bitmap_alloc(topology_max_packages(), GFP_KERNEL);
+	bitmap_andnot(tmp_map, prev_map, mktme_target_map,
+		      sizeof(prev_map));
+
+	/* There should only be one new target */
+	if (bitmap_weight(tmp_map, sizeof(tmp_map)) != 1) {
+		pr_err("%s: expected %d new target, got %d\n", __func__, 1,
+		       bitmap_weight(tmp_map, sizeof(tmp_map)));
+		new_target = -1;
+		goto free_tmp;
+	}
+	new_target = find_first_bit(tmp_map, sizeof(tmp_map));
+
+free_tmp:
+	bitmap_free(tmp_map);
+free_prev:
+	bitmap_free(prev_map);
+	return new_target;
+}
+
 static int __init init_mktme(void)
 {
 	int ret, cpuhp;
