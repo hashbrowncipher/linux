@@ -2,6 +2,7 @@
 
 /* Documentation/x86/mktme_keys.rst */
 
+#include <linux/cred.h>
 #include <linux/cpu.h>
 #include <linux/init.h>
 #include <linux/key.h>
@@ -392,6 +393,9 @@ int mktme_preparse_payload(struct key_preparsed_payload *prep)
 	size_t datalen = prep->datalen;
 	char *options;
 	int ret;
+
+	if (!capable(CAP_SYS_RESOURCE) && !capable(CAP_SYS_ADMIN))
+		return -EACCES;
 
 	if (datalen <= 0 || datalen > 1024 || !prep->data)
 		return -EINVAL;
