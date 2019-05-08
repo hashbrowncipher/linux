@@ -8,6 +8,7 @@
 #include <linux/init.h>
 #include <linux/key.h>
 #include <linux/key-type.h>
+#include <linux/memory.h>
 #include <linux/mm.h>
 #include <linux/parser.h>
 #include <linux/percpu-refcount.h>
@@ -626,6 +627,56 @@ static int mktme_program_new_pconfig_target(int new_pkg)
 	return ret;
 }
 
+static int mktme_memory_callback(struct notifier_block *nb,
+				 unsigned long action, void *arg)
+{
+	unsigned long flags;
+	int ret, new_target;
+
+	/* MEM_GOING_ONLINE is the only mem event of interest to MKTME */
+	if (action != MEM_GOING_ONLINE)
+		return NOTIFY_OK;
+
+	/* Do not allow key programming during hotplug event */
+	spin_lock_irqsave(&mktme_lock, flags);
+
+	/*
+	 * If no keys are actually programmed let this event proceed.
+	 * The topology will be checked on the next key creation attempt.
+	 */
+	if (!mktme_map->mapped_keyids) {
+		mktme_allow_keys = false;
+		ret = NOTIFY_OK;
+		goto out;
+	}
+	/* Do not allow this event if it creates an unsafe MKTME topology */
+	if (!mktme_hmat_evaluate()) {
+		ret = NOTIFY_BAD;
+		goto out;
+	}
+	/* Topology is safe. Is there a new pconfig target? */
+	new_target = mktme_get_new_pconfig_target();
+
+	/* No new target to program */
+	if (new_target < 0) {
+		ret = NOTIFY_OK;
+		goto out;
+	}
+	if (mktme_program_new_pconfig_target(new_target))
+		ret = NOTIFY_BAD;
+	else
+		ret = NOTIFY_OK;
+
+out:
+	spin_unlock_irqrestore(&mktme_lock, flags);
+	return ret;
+}
+
+static struct notifier_block mktme_memory_nb = {
+	.notifier_call = mktme_memory_callback,
+	.priority = 99,				/* priority ? */
+};
+
 static int __init init_mktme(void)
 {
 	int ret, cpuhp;
@@ -679,10 +730,16 @@ static int __init init_mktme(void)
 	if (cpuhp < 0)
 		goto free_store;
 
+	/* Memory hotplug */
+	if (register_memory_notifier(&mktme_memory_nb))
+		goto remove_cpuhp;
+
 	ret = register_key_type(&key_type_mktme);
 	if (!ret)
 		return ret;			/* SUCCESS */
 
+	unregister_memory_notifier(&mktme_memory_nb);
+remove_cpuhp:
 	cpuhp_remove_state_nocalls(cpuhp);
 free_store:
 	kfree(mktme_key_store);
