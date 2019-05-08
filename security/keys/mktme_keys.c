@@ -6,6 +6,10 @@
 #include <linux/key.h>
 #include <linux/key-type.h>
 #include <linux/mm.h>
+#include <linux/parser.h>
+#include <linux/string.h>
+#include <asm/intel_pconfig.h>
+#include <keys/mktme-type.h>
 #include <keys/user-type.h>
 
 #include "internal.h"
@@ -69,8 +73,169 @@ int mktme_keyid_from_key(struct key *key)
 	return 0;
 }
 
+enum mktme_opt_id {
+	OPT_ERROR,
+	OPT_TYPE,
+	OPT_KEY,
+	OPT_TWEAK,
+	OPT_ALGORITHM,
+};
+
+static const match_table_t mktme_token = {
+	{OPT_TYPE, "type=%s"},
+	{OPT_KEY, "key=%s"},
+	{OPT_TWEAK, "tweak=%s"},
+	{OPT_ALGORITHM, "algorithm=%s"},
+	{OPT_ERROR, NULL}
+};
+
+struct mktme_payload {
+	u32		keyid_ctrl;	/* Command & Encryption Algorithm */
+	u8		data_key[MKTME_AES_XTS_SIZE];
+	u8		tweak_key[MKTME_AES_XTS_SIZE];
+};
+
+/* Make sure arguments are correct for the TYPE of key requested */
+static int mktme_check_options(struct mktme_payload *payload,
+			       unsigned long token_mask, enum mktme_type type)
+{
+	if (!token_mask)
+		return -EINVAL;
+
+	switch (type) {
+	case MKTME_TYPE_USER:
+		if (test_bit(OPT_ALGORITHM, &token_mask))
+			payload->keyid_ctrl |= MKTME_AES_XTS_128;
+		else
+			return -EINVAL;
+
+		if ((test_bit(OPT_KEY, &token_mask)) &&
+		    (test_bit(OPT_TWEAK, &token_mask)))
+			payload->keyid_ctrl |= MKTME_KEYID_SET_KEY_DIRECT;
+		else
+			return -EINVAL;
+		break;
+
+	case MKTME_TYPE_CPU:
+		if (test_bit(OPT_ALGORITHM, &token_mask))
+			payload->keyid_ctrl |= MKTME_AES_XTS_128;
+		else
+			return -EINVAL;
+
+		payload->keyid_ctrl |= MKTME_KEYID_SET_KEY_RANDOM;
+		break;
+
+	case MKTME_TYPE_NO_ENCRYPT:
+		payload->keyid_ctrl |= MKTME_KEYID_NO_ENCRYPT;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
+/* Parse the options and store the key programming data in the payload. */
+static int mktme_get_options(char *options, struct mktme_payload *payload)
+{
+	enum mktme_type type = MKTME_TYPE_ERROR;
+	substring_t args[MAX_OPT_ARGS];
+	unsigned long token_mask = 0;
+	char *p = options;
+	int ret, token;
+
+	while ((p = strsep(&options, " \t"))) {
+		if (*p == '\0' || *p == ' ' || *p == '\t')
+			continue;
+		token = match_token(p, mktme_token, args);
+		if (token == OPT_ERROR)
+			return -EINVAL;
+		if (test_and_set_bit(token, &token_mask))
+			return -EINVAL;
+
+		switch (token) {
+		case OPT_KEY:
+			ret = hex2bin(payload->data_key, args[0].from,
+				      MKTME_AES_XTS_SIZE);
+			if (ret < 0)
+				return -EINVAL;
+			break;
+
+		case OPT_TWEAK:
+			ret = hex2bin(payload->tweak_key, args[0].from,
+				      MKTME_AES_XTS_SIZE);
+			if (ret < 0)
+				return -EINVAL;
+			break;
+
+		case OPT_TYPE:
+			type = match_string(mktme_type_names,
+					    ARRAY_SIZE(mktme_type_names),
+					    args[0].from);
+			if (type < 0)
+				return -EINVAL;
+			break;
+
+		case OPT_ALGORITHM:
+			ret = match_string(mktme_alg_names,
+					   ARRAY_SIZE(mktme_alg_names),
+					   args[0].from);
+			if (ret < 0)
+				return -EINVAL;
+			break;
+
+		default:
+			return -EINVAL;
+		}
+	}
+	return mktme_check_options(payload, token_mask, type);
+}
+
+void mktme_free_preparsed_payload(struct key_preparsed_payload *prep)
+{
+	kzfree(prep->payload.data[0]);
+}
+
+/*
+ * Key Service Method to preparse a payload before a key is created.
+ * Check permissions and the options. Load the proposed key field
+ * data into the payload for use by the instantiate method.
+ */
+int mktme_preparse_payload(struct key_preparsed_payload *prep)
+{
+	struct mktme_payload *mktme_payload;
+	size_t datalen = prep->datalen;
+	char *options;
+	int ret;
+
+	if (datalen <= 0 || datalen > 1024 || !prep->data)
+		return -EINVAL;
+
+	options = kmemdup_nul(prep->data, datalen, GFP_KERNEL);
+	if (!options)
+		return -ENOMEM;
+
+	mktme_payload = kzalloc(sizeof(*mktme_payload), GFP_KERNEL);
+	if (!mktme_payload) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	ret = mktme_get_options(options, mktme_payload);
+	if (ret < 0) {
+		kzfree(mktme_payload);
+		goto out;
+	}
+	prep->quotalen = sizeof(mktme_payload);
+	prep->payload.data[0] = mktme_payload;
+out:
+	kzfree(options);
+	return ret;
+}
+
 struct key_type key_type_mktme = {
 	.name		= "mktme",
+	.preparse	= mktme_preparse_payload,
+	.free_preparse	= mktme_free_preparsed_payload,
 	.describe	= user_describe,
 };
 
