@@ -726,6 +726,7 @@ __kernel_physical_mapping_init(unsigned long paddr_start,
 {
 	bool pgd_changed = false;
 	unsigned long vaddr, vaddr_start, vaddr_end, vaddr_next, paddr_last;
+	int ret;
 
 	paddr_last = paddr_end;
 	vaddr = (unsigned long)__va(paddr_start);
@@ -761,6 +762,9 @@ __kernel_physical_mapping_init(unsigned long paddr_start,
 		spin_unlock(&init_mm.page_table_lock);
 		pgd_changed = true;
 	}
+
+	ret = sync_direct_mapping();
+	WARN_ON(ret);
 
 	if (pgd_changed)
 		sync_global_pgds(vaddr_start, vaddr_end - 1);
@@ -1202,10 +1206,13 @@ void __ref vmemmap_free(unsigned long start, unsigned long end,
 static void __meminit
 kernel_physical_mapping_remove(unsigned long start, unsigned long end)
 {
+	int ret;
 	start = (unsigned long)__va(start);
 	end = (unsigned long)__va(end);
 
 	remove_pagetable(start, end, true, NULL);
+	ret = sync_direct_mapping();
+	WARN_ON(ret);
 }
 
 void __ref arch_remove_memory(int nid, u64 start, u64 size,
@@ -1310,6 +1317,7 @@ void mark_rodata_ro(void)
 	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
 	unsigned long rodata_end = PFN_ALIGN(&__end_rodata);
 	unsigned long all_end;
+	int ret;
 
 	printk(KERN_INFO "Write protecting the kernel read-only data: %luk\n",
 	       (end - start) >> 10);
@@ -1343,6 +1351,8 @@ void mark_rodata_ro(void)
 	free_kernel_image_pages((void *)text_end, (void *)rodata_start);
 	free_kernel_image_pages((void *)rodata_end, (void *)_sdata);
 
+	ret = sync_direct_mapping();
+	WARN_ON(ret);
 	debug_checkwx();
 }
 

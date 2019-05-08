@@ -59,6 +59,8 @@ static inline void arch_free_page(struct page *page, int order)
 		free_encrypted_page(page, order);
 }
 
+int sync_direct_mapping(void);
+
 #else
 #define mktme_keyid_mask	((phys_addr_t)0)
 #define mktme_nr_keyids		0
@@ -73,6 +75,10 @@ static inline bool mktme_enabled(void)
 
 static inline void mktme_disable(void) {}
 
+static inline int sync_direct_mapping(void)
+{
+	return 0;
+}
 #endif
 
 #endif
