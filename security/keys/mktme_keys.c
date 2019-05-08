@@ -582,6 +582,50 @@ free_prev:
 	return new_target;
 }
 
+static int mktme_program_new_pconfig_target(int new_pkg)
+{
+	struct mktme_payload *payload;
+	int cpu, keyid, ret;
+
+	/*
+	 * Only program new target when user type keys are stored or,
+	 * no user type keys are currently programmed.
+	 */
+	if (!mktme_storekeys &&
+	    (bitmap_weight(mktme_bitmap_user_type, mktme_nr_keyids)))
+		return -EPERM;
+
+	/* Set mktme_leadcpus to only include new target */
+	cpumask_clear(mktme_leadcpus);
+	for_each_online_cpu(cpu) {
+		if (topology_physical_package_id(cpu) == new_pkg) {
+			__cpumask_set_cpu(cpu, mktme_leadcpus);
+			break;
+		}
+	}
+	/* Program the stored keys into the new key table */
+	for (keyid = 1; keyid <= mktme_nr_keyids; keyid++) {
+		/*
+		 * When a KeyID slot is not in use, the corresponding key
+		 * pointer is 0. '-1' is an intermediate state where the
+		 * key is on it's way out, but not gone yet. Program '-1's.
+		 */
+		if (mktme_map->key[keyid] == 0)
+			continue;
+
+		payload = &mktme_key_store[keyid];
+		ret = mktme_program_keyid(keyid, payload);
+		if (ret != MKTME_PROG_SUCCESS) {
+			/* Quit on first failure to program key table */
+			pr_debug("mktme: %s\n", mktme_error[ret].msg);
+			ret = -ENOKEY;
+			break;
+		}
+	}
+	mktme_update_pconfig_targets();		/* Restore mktme_leadcpus */
+	return ret;
+}
+
 static int __init init_mktme(void)
 {
 	int ret, cpuhp;
