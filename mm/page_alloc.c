@@ -3975,6 +3975,41 @@ should_compact_retry(struct alloc_context *ac, unsigned int order, int alloc_fla
 }
 #endif /* CONFIG_COMPACTION */
 
+#ifndef CONFIG_NUMA
+struct page *alloc_pages_vma(gfp_t gfp_mask, int order,
+		struct vm_area_struct *vma, unsigned long addr,
+		int node, bool hugepage)
+{
+	struct page *page;
+	bool deferred_zero;
+	int keyid = vma_keyid(vma);
+
+	deferred_zero = deferred_page_zero(keyid, &gfp_mask);
+	page = alloc_pages(gfp_mask, order);
+	if (page)
+		prep_encrypted_page(page, order, keyid, deferred_zero);
+
+	return page;
+}
+#endif
+
+struct page * __alloc_pages_node_keyid(int nid, int keyid,
+		gfp_t gfp_mask, unsigned int order)
+{
+	struct page *page;
+	bool deferred_zero;
+
+	VM_BUG_ON(nid < 0 || nid >= MAX_NUMNODES);
+	VM_WARN_ON(!node_online(nid));
+
+	deferred_zero = deferred_page_zero(keyid, &gfp_mask);
+	page = __alloc_pages(gfp_mask, order, nid);
+	if (page)
+		prep_encrypted_page(page, order, keyid, deferred_zero);
+
+	return page;
+}
+
 #ifdef CONFIG_LOCKDEP
 static struct lockdep_map __fs_reclaim_map =
 	STATIC_LOCKDEP_MAP_INIT("fs_reclaim", &__fs_reclaim_map);
@@ -4689,6 +4724,21 @@ out:
 	return page;
 }
 EXPORT_SYMBOL(__alloc_pages_nodemask);
+
+struct page *
+__alloc_pages_nodemask_keyid(gfp_t gfp_mask, unsigned int order,
+		int preferred_nid, nodemask_t *nodemask, int keyid)
+{
+	struct page *page;
+	bool deferred_zero;
+
+	deferred_zero = deferred_page_zero(keyid, &gfp_mask);
+	page = __alloc_pages_nodemask(gfp_mask, order, preferred_nid, nodemask);
+	if (page)
+		prep_encrypted_page(page, order, keyid, deferred_zero);
+	return page;
+}
+EXPORT_SYMBOL(__alloc_pages_nodemask_keyid);
 
 /*
  * Common helper functions. Never use with __GFP_HIGHMEM because the returned
