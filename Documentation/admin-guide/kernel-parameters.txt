@@ -2611,6 +2611,17 @@
 				Equivalent to: l1tf=flush,nosmt [X86]
 					       mds=full,nosmt [X86]
 
+	mktme_storekeys [X86, MKTME] When CONFIG_X86_INTEL_MKTME is set
+			this parameter allows the kernel to store the user
+			specified MKTME key payload. Storing this payload
+			means that the MKTME Key Service can always allow
+			the addition of new physical packages. If the
+			mktme_storekeys parameter is not present, users key
+			data will not be stored, and new physical packages
+			may only be added to the system if no user type
+			MKTME keys are programmed.
+			See Documentation/x86/mktme.rst
+
 	mminit_loglevel=
 			[KNL] When CONFIG_DEBUG_MEMORY_INIT is set, this
 			parameter allows control of the logging verbosity for

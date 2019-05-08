@@ -22,6 +22,9 @@ static DEFINE_SPINLOCK(mktme_lock);
 struct kmem_cache *mktme_prog_cache;	/* Hardware programming cache */
 unsigned long *mktme_target_map;	/* Pconfig programming targets */
 cpumask_var_t mktme_leadcpus;		/* One lead CPU per pconfig target */
+static bool mktme_storekeys;		/* True if key payloads may be stored */
+unsigned long *mktme_bitmap_user_type;	/* Shows presence of user type keys */
+struct mktme_payload *mktme_key_store;	/* Payload storage if allowed */
 
 /* 1:1 Mapping between Userspace Keys (struct key) and Hardware KeyIDs */
 struct mktme_mapping {
@@ -123,6 +126,27 @@ struct mktme_payload {
 	u8		data_key[MKTME_AES_XTS_SIZE];
 	u8		tweak_key[MKTME_AES_XTS_SIZE];
 };
+
+void mktme_store_payload(int keyid, struct mktme_payload *payload)
+{
+	/* Always remember if this key is of type "user" */
+	if ((payload->keyid_ctrl & 0xff) == MKTME_KEYID_SET_KEY_DIRECT)
+		set_bit(keyid, mktme_bitmap_user_type);
+	/*
+	 * Always store the control fields to program newly
+	 * onlined packages with RANDOM or NO_ENCRYPT keys.
+	 */
+	mktme_key_store[keyid].keyid_ctrl = payload->keyid_ctrl;
+
+	/* Only store "user" type data and tweak keys if allowed */
+	if (mktme_storekeys &&
+	    ((payload->keyid_ctrl & 0xff) == MKTME_KEYID_SET_KEY_DIRECT)) {
+		memcpy(mktme_key_store[keyid].data_key, payload->data_key,
+		       MKTME_AES_XTS_SIZE);
+		memcpy(mktme_key_store[keyid].tweak_key, payload->tweak_key,
+		       MKTME_AES_XTS_SIZE);
+	}
+}
 
 struct mktme_hw_program_info {
 	struct mktme_key_program *key_program;
@@ -270,9 +294,10 @@ int mktme_instantiate_key(struct key *key, struct key_preparsed_payload *prep)
 			    0, GFP_KERNEL))
 		goto err_out;
 
-	if (!mktme_program_keyid(keyid, payload))
+	if (!mktme_program_keyid(keyid, payload)) {
+		mktme_store_payload(keyid, payload);
 		return MKTME_PROG_SUCCESS;
-
+	}
 	percpu_ref_exit(&encrypt_count[keyid]);
 err_out:
 	spin_lock_irqsave(&mktme_lock, flags);
@@ -487,10 +512,25 @@ static int __init init_mktme(void)
 	if (!encrypt_count)
 		goto free_targets;
 
+	/* Detect presence of user type keys */
+	mktme_bitmap_user_type = bitmap_zalloc(mktme_nr_keyids, GFP_KERNEL);
+	if (!mktme_bitmap_user_type)
+		goto free_encrypt;
+
+	/* Store key payloads if allowable */
+	mktme_key_store = kzalloc(sizeof(mktme_key_store[0]) *
+				   (mktme_nr_keyids + 1), GFP_KERNEL);
+	if (!mktme_key_store)
+		goto free_bitmap;
+
 	ret = register_key_type(&key_type_mktme);
 	if (!ret)
 		return ret;			/* SUCCESS */
 
+	kfree(mktme_key_store);
+free_bitmap:
+	bitmap_free(mktme_bitmap_user_type);
+free_encrypt:
 	kvfree(encrypt_count);
 free_targets:
 	free_cpumask_var(mktme_leadcpus);
@@ -504,3 +544,10 @@ free_map:
 }
 
 late_initcall(init_mktme);
+
+static int mktme_enable_storekeys(char *__unused)
+{
+	mktme_storekeys = true;
+	return 1;
+}
+__setup("mktme_storekeys", mktme_enable_storekeys);
