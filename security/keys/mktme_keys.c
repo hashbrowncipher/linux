@@ -7,6 +7,7 @@
 #include <linux/key-type.h>
 #include <linux/mm.h>
 #include <linux/parser.h>
+#include <linux/random.h>
 #include <linux/string.h>
 #include <asm/intel_pconfig.h>
 #include <keys/mktme-type.h>
@@ -102,7 +103,8 @@ struct mktme_payload {
 static int mktme_program_keyid(int keyid, struct mktme_payload *payload)
 {
 	struct mktme_key_program *kprog = NULL;
-	int ret;
+	u8 kern_entropy[MKTME_AES_XTS_SIZE];
+	int ret, i;
 
 	kprog = kmem_cache_zalloc(mktme_prog_cache, GFP_ATOMIC);
 	if (!kprog)
@@ -114,6 +116,14 @@ static int mktme_program_keyid(int keyid, struct mktme_payload *payload)
 	memcpy(kprog->key_field_1, payload->data_key, MKTME_AES_XTS_SIZE);
 	memcpy(kprog->key_field_2, payload->tweak_key, MKTME_AES_XTS_SIZE);
 
+	/* Strengthen the entropy fields for CPU generated keys */
+	if ((payload->keyid_ctrl & 0xff) == MKTME_KEYID_SET_KEY_RANDOM) {
+		get_random_bytes(&kern_entropy, sizeof(kern_entropy));
+		for (i = 0; i < (MKTME_AES_XTS_SIZE); i++) {
+			kprog->key_field_1[i] ^= kern_entropy[i];
+			kprog->key_field_2[i] ^= kern_entropy[i];
+		}
+	}
 	ret = MKTME_PROG_SUCCESS;	/* Future programming call */
 	kmem_cache_free(mktme_prog_cache, kprog);
 	return ret;
