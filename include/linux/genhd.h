@@ -62,7 +62,7 @@ struct hd_struct {
 #if BITS_PER_LONG==32 && defined(CONFIG_SMP)
 	seqcount_t nr_sects_seq;
 #endif
-	unsigned long stamp;
+	u64 stamp;
 	struct disk_stats __percpu *dkstats;
 	struct percpu_ref ref;
 

@@ -62,6 +62,8 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(block_unplug);
 
 DEFINE_IDA(blk_queue_ida);
 
+#define IO_TICKS_COARSENESS 10
+
 /*
  * For queue allocation
  */
@@ -1396,10 +1398,14 @@ unsigned int blk_rq_err_bytes(const struct request *rq)
 }
 EXPORT_SYMBOL_GPL(blk_rq_err_bytes);
 
-static void update_io_ticks(struct hd_struct *part, unsigned long now, unsigned long start)
+static void update_io_ticks(struct hd_struct *part, u64 now, u64 start)
 {
-	unsigned long stamp;
-	unsigned long elapsed;
+	u64 stamp;
+	u64 elapsed;
+
+	start &= ~((1<<IO_TICKS_COARSENESS) - 1);
+	now &= ~((1<<IO_TICKS_COARSENESS) - 1);
+
 again:
 	stamp = READ_ONCE(part->stamp);
 	if (unlikely(stamp != now)) {
@@ -1447,7 +1453,7 @@ void blk_account_io_done(struct request *req, u64 now)
 		part_stat_lock();
 		part = req->part;
 
-		update_io_ticks(part, jiffies, nsecs_to_jiffies(req->start_time_ns));
+		update_io_ticks(part, now, req->start_time_ns);
 		part_stat_inc(part, ios[sgrp]);
 		part_stat_add(part, nsecs[sgrp], now - req->start_time_ns);
 		part_stat_unlock();
@@ -1493,7 +1499,7 @@ void disk_end_io_acct(struct gendisk *disk, unsigned int op,
 	unsigned long duration = now - start_time;
 
 	part_stat_lock();
-	update_io_ticks(part, now, start_time);
+	update_io_ticks(part, jiffies_to_nsecs(now), jiffies_to_nsecs(start_time));
 	part_stat_add(part, nsecs[sgrp], jiffies_to_nsecs(duration));
 	part_stat_local_dec(part, in_flight[op_is_write(op)]);
 	part_stat_unlock();
