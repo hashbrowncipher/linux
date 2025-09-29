@@ -26,7 +26,10 @@
 #include <crypto/aes.h>
 
 #define TPM_DIGEST_SIZE 20	/* Max TPM v1.2 PCR size */
+#define TPM_HEADER_SIZE		10
 
+#define TPM2_PLATFORM_PCR	24
+#define TPM2_PCR_SELECT_MIN	3
 #define TPM2_MAX_DIGEST_SIZE	SHA512_DIGEST_SIZE
 #define TPM2_MAX_PCR_BANKS	8
 
@@ -216,13 +219,6 @@ struct tpm_chip {
 	u8 null_ec_key_y[EC_PT_SZ];
 	struct tpm2_auth *auth;
 #endif
-};
-
-#define TPM_HEADER_SIZE		10
-
-enum tpm2_const {
-	TPM2_PLATFORM_PCR       =     24,
-	TPM2_PCR_SELECT_MIN     = ((TPM2_PLATFORM_PCR + 7) / 8),
 };
 
 enum tpm2_timeouts {
