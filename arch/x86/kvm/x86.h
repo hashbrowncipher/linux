@@ -579,6 +579,21 @@ static inline bool kvm_aperfmperf_in_guest(struct kvm *kvm)
 	return kvm->arch.disabled_exits & KVM_X86_DISABLE_EXITS_APERFMPERF;
 }
 
+static inline void kvm_enable_exits(struct kvm *kvm, u64 mask)
+{
+	kvm->arch.enabled_exits |= mask;
+}
+
+static inline bool kvm_rdtsc_exit_enabled(struct kvm *kvm)
+{
+	return kvm->arch.enabled_exits & KVM_X86_ENABLE_EXITS_RDTSC;
+}
+
+static inline bool kvm_rdrand_exit_enabled(struct kvm *kvm)
+{
+	return kvm->arch.enabled_exits & KVM_X86_ENABLE_EXITS_RDRAND;
+}
+
 static inline bool kvm_notify_vmexit_enabled(struct kvm *kvm)
 {
 	return kvm->arch.notify_vmexit_flags & KVM_X86_NOTIFY_VMEXIT_ENABLED;

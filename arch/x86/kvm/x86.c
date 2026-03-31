@@ -4721,6 +4721,11 @@ static inline bool kvm_can_mwait_in_guest(void)
 		boot_cpu_has(X86_FEATURE_ARAT);
 }
 
+static u64 kvm_get_allowed_enable_exits(void)
+{
+	return KVM_X86_ENABLE_EXITS_RDTSC | KVM_X86_ENABLE_EXITS_RDRAND;
+}
+
 static u64 kvm_get_allowed_disable_exits(void)
 {
 	u64 r = KVM_X86_DISABLE_EXITS_PAUSE;
@@ -4890,6 +4895,9 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		break;
 	case KVM_CAP_X86_DISABLE_EXITS:
 		r = kvm_get_allowed_disable_exits();
+		break;
+	case KVM_CAP_X86_ENABLE_EXITS:
+		r = kvm_get_allowed_enable_exits();
 		break;
 	case KVM_CAP_X86_SMM:
 		if (!IS_ENABLED(CONFIG_KVM_SMM))
@@ -6776,6 +6784,22 @@ split_irqchip_unlock:
 		kvm_disable_exits(kvm, cap->args[0]);
 		r = 0;
 disable_exits_unlock:
+		mutex_unlock(&kvm->lock);
+		break;
+	case KVM_CAP_X86_ENABLE_EXITS:
+		r = -EINVAL;
+		if (cap->args[0] & ~kvm_get_allowed_enable_exits())
+			break;
+
+		mutex_lock(&kvm->lock);
+		if (kvm->created_vcpus) {
+			r = -EINVAL;
+			mutex_unlock(&kvm->lock);
+			break;
+		}
+
+		kvm_enable_exits(kvm, cap->args[0]);
+		r = 0;
 		mutex_unlock(&kvm->lock);
 		break;
 	case KVM_CAP_MSR_PLATFORM_INFO:

@@ -180,6 +180,8 @@ struct kvm_xen_exit {
 #define KVM_EXIT_MEMORY_FAULT     39
 #define KVM_EXIT_TDX              40
 #define KVM_EXIT_ARM_SEA          41
+#define KVM_EXIT_RDTSC            45
+#define KVM_EXIT_RDRAND           46
 
 /* For KVM_EXIT_INTERNAL_ERROR */
 /* Emulate instruction failed. */
@@ -482,6 +484,12 @@ struct kvm_run {
 			__u64 gva;
 			__u64 gpa;
 		} arm_sea;
+		/* KVM_EXIT_RDTSC / KVM_EXIT_RDRAND */
+		struct {
+			__u64 value;    /* userspace -> kernel: result value */
+			__u8 handled;   /* userspace -> kernel: 1 = value is valid */
+			__u8 pad[7];
+		} rdinsn;
 		/* Fix the size of the union. */
 		char padding[256];
 	};
@@ -654,6 +662,10 @@ struct kvm_ioeventfd {
 #define KVM_X86_DISABLE_EXITS_PAUSE          (1 << 2)
 #define KVM_X86_DISABLE_EXITS_CSTATE         (1 << 3)
 #define KVM_X86_DISABLE_EXITS_APERFMPERF     (1 << 4)
+
+/* for KVM_CAP_X86_ENABLE_EXITS */
+#define KVM_X86_ENABLE_EXITS_RDTSC           (1 << 0)
+#define KVM_X86_ENABLE_EXITS_RDRAND          (1 << 1)
 
 /* for KVM_ENABLE_CAP */
 struct kvm_enable_cap {
@@ -974,6 +986,7 @@ struct kvm_enable_cap {
 #define KVM_CAP_GUEST_MEMFD_FLAGS 244
 #define KVM_CAP_ARM_SEA_TO_USER 245
 #define KVM_CAP_S390_USER_OPEREXEC 246
+#define KVM_CAP_X86_ENABLE_EXITS 248
 
 struct kvm_irq_routing_irqchip {
 	__u32 irqchip;
