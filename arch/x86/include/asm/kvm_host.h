@@ -1427,6 +1427,7 @@ struct kvm_arch {
 	gpa_t wall_clock;
 
 	u64 disabled_exits;
+	u64 enabled_exits;
 
 	s64 kvmclock_offset;
 

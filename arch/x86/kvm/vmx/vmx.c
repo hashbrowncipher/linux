@@ -4569,10 +4569,17 @@ static u32 vmx_exec_control(struct vcpu_vmx *vmx)
 	 * Not used by KVM, but fully supported for nesting, i.e. are allowed in
 	 * vmcs12 and propagated to vmcs02 when set in vmcs12.
 	 */
-	exec_control &= ~(CPU_BASED_RDTSC_EXITING |
-			  CPU_BASED_USE_IO_BITMAPS |
+	exec_control &= ~(CPU_BASED_USE_IO_BITMAPS |
 			  CPU_BASED_MONITOR_TRAP_FLAG |
 			  CPU_BASED_PAUSE_EXITING);
+
+	/*
+	 * RDTSC exiting is off by default. When userspace requests RDTSC exit
+	 * interception via KVM_CAP_X86_ENABLE_EXITS, keep the bit set so that
+	 * RDTSC/RDTSCP cause VMEXITs.
+	 */
+	if (!kvm_rdtsc_exit_enabled(vmx->vcpu.kvm))
+		exec_control &= ~CPU_BASED_RDTSC_EXITING;
 
 	/* INTR_WINDOW_EXITING and NMI_WINDOW_EXITING are toggled dynamically */
 	exec_control &= ~(CPU_BASED_INTR_WINDOW_EXITING |
@@ -4758,6 +4765,14 @@ static u32 vmx_secondary_exec_control(struct vcpu_vmx *vmx)
 
 	vmx_adjust_sec_exec_exiting(vmx, &exec_control, rdrand, RDRAND);
 	vmx_adjust_sec_exec_exiting(vmx, &exec_control, rdseed, RDSEED);
+
+	/*
+	 * When userspace has requested RDRAND exit interception via
+	 * KVM_CAP_X86_ENABLE_EXITS, force the exiting bit on even though
+	 * the guest CPUID advertises RDRAND support.
+	 */
+	if (kvm_rdrand_exit_enabled(vcpu->kvm) && cpu_has_vmx_rdrand())
+		exec_control |= SECONDARY_EXEC_RDRAND_EXITING;
 
 	vmx_adjust_sec_exec_control(vmx, &exec_control, waitpkg, WAITPKG,
 				    ENABLE_USR_WAIT_PAUSE, false);
@@ -6234,6 +6249,27 @@ static int handle_wrmsr_imm(struct kvm_vcpu *vcpu)
 				     vmx_get_msr_imm_reg(vcpu));
 }
 
+static int handle_rdtsc(struct kvm_vcpu *vcpu)
+{
+	vcpu->run->exit_reason = KVM_EXIT_RDTSC;
+	vcpu->run->rdinsn.value = 0;
+	vcpu->run->rdinsn.handled = 0;
+	memset(vcpu->run->rdinsn.pad, 0, sizeof(vcpu->run->rdinsn.pad));
+	return 0;
+}
+
+static int handle_rdrand(struct kvm_vcpu *vcpu)
+{
+	if (!kvm_rdrand_exit_enabled(vcpu->kvm))
+		return kvm_handle_invalid_op(vcpu);
+
+	vcpu->run->exit_reason = KVM_EXIT_RDRAND;
+	vcpu->run->rdinsn.value = 0;
+	vcpu->run->rdinsn.handled = 0;
+	memset(vcpu->run->rdinsn.pad, 0, sizeof(vcpu->run->rdinsn.pad));
+	return 0;
+}
+
 /*
  * The exit handlers return 1 if the exit was handled fully and guest execution
  * may resume.  Otherwise they set the kvm_run parameter to indicate what needs
@@ -6248,6 +6284,7 @@ static int (*kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 	[EXIT_REASON_CR_ACCESS]               = handle_cr,
 	[EXIT_REASON_DR_ACCESS]               = handle_dr,
 	[EXIT_REASON_CPUID]                   = kvm_emulate_cpuid,
+	[EXIT_REASON_RDTSC]                   = handle_rdtsc,
 	[EXIT_REASON_MSR_READ]                = kvm_emulate_rdmsr,
 	[EXIT_REASON_MSR_WRITE]               = kvm_emulate_wrmsr,
 	[EXIT_REASON_INTERRUPT_WINDOW]        = handle_interrupt_window,
@@ -6283,11 +6320,12 @@ static int (*kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 	[EXIT_REASON_MONITOR_INSTRUCTION]     = kvm_emulate_monitor,
 	[EXIT_REASON_INVEPT]                  = handle_vmx_instruction,
 	[EXIT_REASON_INVVPID]                 = handle_vmx_instruction,
-	[EXIT_REASON_RDRAND]                  = kvm_handle_invalid_op,
+	[EXIT_REASON_RDRAND]                  = handle_rdrand,
 	[EXIT_REASON_RDSEED]                  = kvm_handle_invalid_op,
 	[EXIT_REASON_PML_FULL]		      = handle_pml_full,
 	[EXIT_REASON_INVPCID]                 = handle_invpcid,
 	[EXIT_REASON_VMFUNC]		      = handle_vmx_instruction,
+	[EXIT_REASON_RDTSCP]                  = handle_rdtsc,
 	[EXIT_REASON_PREEMPTION_TIMER]	      = handle_preemption_timer,
 	[EXIT_REASON_ENCLS]		      = handle_encls,
 	[EXIT_REASON_BUS_LOCK]                = handle_bus_lock_vmexit,
