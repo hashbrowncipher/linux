@@ -18,12 +18,32 @@
 #include <linux/time.h>
 #include <linux/export.h>
 
+#include <asm/cpufeature.h>
 #include <asm/vsyscall.h>
 #include <asm/x86_init.h>
 #include <asm/i8259.h>
 #include <asm/timer.h>
 #include <asm/hpet.h>
 #include <asm/time.h>
+
+#if defined(CONFIG_NO_HZ_FULL) && !defined(CONFIG_SMP)
+/*
+ * On UP x86, allow nohz_full only when running under a hypervisor.
+ * Bare-metal firmware (BIOS watchdog, SMI handlers) may depend on a
+ * periodic tick that the kernel cannot detect or negotiate away.
+ *
+ * Overrides the __weak default in kernel/time/tick-sched.c.
+ */
+bool __init arch_tick_nohz_up_check(void)
+{
+	if (!boot_cpu_has(X86_FEATURE_HYPERVISOR)) {
+		pr_warn("NO_HZ_FULL: not enabling on UP bare metal — no hypervisor detected\n");
+		return false;
+	}
+
+	return true;
+}
+#endif
 
 unsigned long profile_pc(struct pt_regs *regs)
 {

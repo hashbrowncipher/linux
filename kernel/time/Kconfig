@@ -130,16 +130,14 @@ config NO_HZ_IDLE
 config NO_HZ_FULL
 	bool "Full dynticks system (tickless)"
 	# NO_HZ_COMMON dependency
-	# We need at least one periodic CPU for timekeeping
-	depends on SMP
 	depends on HAVE_CONTEXT_TRACKING_USER
 	# VIRT_CPU_ACCOUNTING_GEN dependency
 	depends on HAVE_VIRT_CPU_ACCOUNTING_GEN
 	select NO_HZ_COMMON
-	select RCU_NOCB_CPU
+	select RCU_NOCB_CPU if SMP
 	select VIRT_CPU_ACCOUNTING_GEN
 	select IRQ_WORK
-	select CPU_ISOLATION
+	select CPU_ISOLATION if SMP
 	help
 	 Adaptively try to shutdown the tick whenever possible, even when
 	 the CPU is running tasks. Typically this requires running a single

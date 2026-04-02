@@ -235,13 +235,15 @@ static void tick_sched_do_timer(struct tick_sched *ts, ktime_t now)
 	 * this duty, then the jiffies update is still serialized by
 	 * 'jiffies_lock'.
 	 *
-	 * If nohz_full is enabled, this should not happen because the
-	 * 'tick_do_timer_cpu' CPU never relinquishes.
+	 * On SMP nohz_full this should not happen because the timekeeping
+	 * CPU never relinquishes. On UP nohz_full it is the expected path:
+	 * the single CPU drops the duty when entering userspace and reclaims
+	 * it here on the next kernel entry.
 	 */
 	tick_cpu = READ_ONCE(tick_do_timer_cpu);
 
 	if (IS_ENABLED(CONFIG_NO_HZ_COMMON) && unlikely(tick_cpu == TICK_DO_TIMER_NONE)) {
-#ifdef CONFIG_NO_HZ_FULL
+#if defined(CONFIG_NO_HZ_FULL) && defined(CONFIG_SMP)
 		WARN_ON_ONCE(tick_nohz_full_running);
 #endif
 		WRITE_ONCE(tick_do_timer_cpu, cpu);
@@ -646,9 +648,49 @@ static int tick_nohz_cpu_down(unsigned int cpu)
 	return tick_nohz_cpu_hotpluggable(cpu) ? 0 : -EBUSY;
 }
 
+/*
+ * On UP there is no isolation infrastructure (nohz_full= boot parameter,
+ * housekeeping mask) — those depend on CPU_ISOLATION which is SMP-only.
+ * Instead, auto-enable nohz_full for CPU 0 if the environment is safe.
+ *
+ * Stopping the tick on the only CPU is only safe when there is no firmware
+ * that expects periodic entry (ACPI S3/S4, watchdog servicing, etc.).
+ * The generic checks here cover build-time-visible constraints; the arch
+ * provides arch_tick_nohz_up_check() for runtime hardware detection.
+ * The default weak implementation refuses, so an arch must explicitly opt
+ * in.  Each check has its own warning so that future maintainers can relax
+ * individual requirements as support is validated.
+ */
+bool __init __weak arch_tick_nohz_up_check(void)
+{
+	pr_warn("NO_HZ_FULL: not enabling on UP — arch has not been validated\n");
+	return false;
+}
+
+static bool __init tick_nohz_check_up(void)
+{
+#ifdef CONFIG_SMP
+	return false;  /* SMP uses the normal housekeeping path */
+#else
+
+	if (IS_ENABLED(CONFIG_ACPI)) {
+		pr_warn("NO_HZ_FULL: not enabling on UP with ACPI — firmware may require periodic tick\n");
+		return false;
+	}
+
+	return arch_tick_nohz_up_check();
+#endif /* CONFIG_SMP */
+}
+
 void __init tick_nohz_init(void)
 {
 	int cpu, ret;
+
+	if (!tick_nohz_full_running && tick_nohz_check_up()) {
+		alloc_bootmem_cpumask_var(&tick_nohz_full_mask);
+		cpumask_set_cpu(0, tick_nohz_full_mask);
+		tick_nohz_full_running = true;
+	}
 
 	if (!tick_nohz_full_running)
 		return;
@@ -1222,6 +1264,7 @@ static bool can_stop_idle_tick(int cpu, struct tick_sched *ts)
 	if (unlikely(report_idle_softirq()))
 		return false;
 
+#ifdef CONFIG_SMP
 	if (tick_nohz_full_enabled()) {
 		int tick_cpu = READ_ONCE(tick_do_timer_cpu);
 
@@ -1236,6 +1279,7 @@ static bool can_stop_idle_tick(int cpu, struct tick_sched *ts)
 		if (WARN_ON_ONCE(tick_cpu == TICK_DO_TIMER_NONE))
 			return false;
 	}
+#endif
 
 	return true;
 }
