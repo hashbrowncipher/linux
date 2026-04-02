@@ -2274,6 +2274,8 @@ static fastpath_t __handle_fastpath_wrmsr(struct kvm_vcpu *vcpu, u32 msr, u64 da
 			return EXIT_FASTPATH_NONE;
 		break;
 	case MSR_IA32_TSC_DEADLINE:
+		if (!lapic_in_kernel(vcpu))
+			return EXIT_FASTPATH_NONE;
 		kvm_set_lapic_tscdeadline_msr(vcpu, data);
 		break;
 	default:
@@ -4022,6 +4024,8 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
 		return kvm_x2apic_msr_write(vcpu, msr, data);
 	case MSR_IA32_TSC_DEADLINE:
+		if (!lapic_in_kernel(vcpu))
+			return KVM_MSR_RET_UNSUPPORTED;
 		kvm_set_lapic_tscdeadline_msr(vcpu, data);
 		break;
 	case MSR_IA32_TSC_ADJUST:
@@ -4449,6 +4453,8 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
 		return kvm_x2apic_msr_read(vcpu, msr_info->index, &msr_info->data);
 	case MSR_IA32_TSC_DEADLINE:
+		if (!lapic_in_kernel(vcpu))
+			return KVM_MSR_RET_UNSUPPORTED;
 		msr_info->data = kvm_get_lapic_tscdeadline_msr(vcpu);
 		break;
 	case MSR_IA32_TSC_ADJUST:
